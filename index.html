@@ -1,0 +1,601 @@
+index.html
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control de Asistencia</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, addDoc, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    // ⚠️ PEGA AQUÍ TU CONFIGURACIÓN DE FIREBASE (DEL PASO 1) ⚠️
+    
+const firebaseConfig = {
+  apiKey: "AIzaSyCULIq7h7XZMapJhqzCiqiV2N4CBjsWM8Y",
+  authDomain: "asistencia-153c3.firebaseapp.com",
+  projectId: "asistencia-153c3",
+  storageBucket: "asistencia-153c3.firebasestorage.app",
+  messagingSenderId: "995005269344",
+  appId: "1:995005269344:web:21e80718ee449c4fe80a05",
+  measurementId: "G-XPRLGQMFZD"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+    // Exponer funciones al ámbito global para la interfaz
+    window.db = db;
+    window.fb = { collection, doc, setDoc, getDoc, getDocs, onSnapshot, addDoc, deleteDoc, query, where };
+    window.initApp();
+  </script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen font-sans select-none">
+
+  <!-- PANTALLA 1: SELECCIÓN DE MODO (TRABAJADOR / ADMINISTRADOR) -->
+  <div id="screen-home" class="min-h-screen flex flex-col items-center justify-center p-6">
+    <div class="max-w-2xl w-full text-center mb-10">
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 text-white mb-4 shadow-lg">
+        <i data-lucide="clock" class="w-9 h-9"></i>
+      </div>
+      <h1 class="text-3xl md:text-4xl font-extrabold text-slate-900">Control de Asistencia</h1>
+      <p class="text-slate-500 text-lg mt-2">¿Cómo desea ingresar?</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl w-full">
+      <!-- Botón Trabajador -->
+      <button onclick="enterWorkerMode()" class="bg-white hover:bg-blue-50 border-2 border-slate-200 hover:border-blue-500 rounded-3xl p-8 shadow-md transition-all flex flex-col items-center text-center group active:scale-95">
+        <div class="w-20 h-20 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+          <i data-lucide="users" class="w-10 h-10"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-slate-900">Trabajador</h2>
+        <p class="text-slate-500 mt-2 text-base">Registrar entrada, comida y salida</p>
+      </button>
+
+      <!-- Botón Administrador -->
+      <button onclick="openAdminLogin()" class="bg-white hover:bg-slate-900 border-2 border-slate-200 hover:border-slate-900 rounded-3xl p-8 shadow-md transition-all flex flex-col items-center text-center group active:scale-95">
+        <div class="w-20 h-20 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center mb-4 group-hover:bg-slate-800 group-hover:text-white transition-colors">
+          <i data-lucide="shield-check" class="w-10 h-10"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-slate-900 group-hover:text-white">Administrador</h2>
+        <p class="text-slate-500 group-hover:text-slate-300 mt-2 text-base">Reportes, horas extras y personal</p>
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL PIN ADMINISTRADOR -->
+  <div id="modal-pin" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-7 shadow-2xl text-center">
+      <div class="w-14 h-14 rounded-full bg-slate-100 text-slate-800 flex items-center justify-center mx-auto mb-3">
+        <i data-lucide="lock" class="w-7 h-7"></i>
+      </div>
+      <h3 class="text-xl font-bold text-slate-900">Acceso Administrador</h3>
+      <p class="text-slate-500 text-sm mt-1">Ingrese su PIN de seguridad</p>
+      <input id="admin-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="••••"
+        class="mt-5 w-full text-center text-3xl tracking-[0.5em] font-bold border-2 border-slate-300 focus:border-blue-600 rounded-2xl py-3 outline-none" />
+      <p id="pin-error" class="text-red-600 text-sm font-medium mt-2 hidden">PIN incorrecto. Intente de nuevo.</p>
+      <div class="grid grid-cols-2 gap-3 mt-6">
+        <button onclick="closeAdminLogin()" class="py-3 rounded-xl bg-slate-100 hover:bg-slate-200 font-semibold text-slate-700">Cancelar</button>
+        <button onclick="verifyAdminPin()" class="py-3 rounded-xl bg-blue-600 hover:bg-blue-700 font-semibold text-white">Entrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANTALLA 2: MODO TRABAJADOR -->
+  <div id="screen-worker" class="hidden min-h-screen flex flex-col">
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm">
+      <div class="flex items-center gap-3">
+        <div class="bg-blue-600 text-white p-2 rounded-xl"><i data-lucide="clock" class="w-6 h-6"></i></div>
+        <div>
+          <h1 class="font-bold text-lg text-slate-900 leading-tight">Registro de Asistencia</h1>
+          <p id="worker-date-label" class="text-xs text-slate-500 capitalize"></p>
+        </div>
+      </div>
+      <button onclick="goHome()" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm">
+        <i data-lucide="log-out" class="w-4 h-4"></i> Cambiar Modo
+      </button>
+    </header>
+
+    <main class="max-w-4xl w-full mx-auto p-6 flex-1 flex flex-col gap-6">
+      <!-- Reloj en tiempo real -->
+      <div class="bg-slate-900 text-white rounded-3xl p-6 text-center shadow-lg">
+        <p class="text-slate-400 text-sm uppercase tracking-widest font-semibold">Hora Actual Exacta</p>
+        <div id="live-clock" class="text-5xl md:text-6xl font-extrabold tracking-tight mt-1 font-mono">--:--:--</div>
+      </div>
+
+      <!-- Paso 1: Seleccionar Nombre -->
+      <div>
+        <h2 class="text-lg font-bold text-slate-800 mb-3">1. Toque su nombre:</h2>
+        <div id="worker-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+      </div>
+
+      <!-- Paso 2: Botón Inteligente -->
+      <div id="action-panel" class="hidden bg-white rounded-3xl p-6 border-2 border-blue-200 shadow-md text-center mt-2">
+        <p class="text-slate-500 text-sm">Empleado seleccionado:</p>
+        <h3 id="selected-worker-name" class="text-2xl font-extrabold text-slate-900 mb-4"></h3>
+        <div id="worker-status-badges" class="flex flex-wrap justify-center gap-2 mb-5 text-xs"></div>
+        <button id="smart-action-btn" onclick="executeSmartAction()" class="w-full py-6 px-6 rounded-2xl text-white font-extrabold text-2xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-3">
+        </button>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL DE CONFIRMACIÓN PARA TRABAJADOR -->
+  <div id="modal-confirm" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl text-center">
+      <div class="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+        <i data-lucide="check-circle-2" class="w-12 h-12"></i>
+      </div>
+      <h3 class="text-2xl font-extrabold text-slate-900 mb-2">¡Listo!</h3>
+      <p id="confirm-message" class="text-lg text-slate-700 font-medium leading-relaxed"></p>
+      <p id="confirm-time" class="text-sm text-slate-400 mt-3 font-mono"></p>
+      <button onclick="closeConfirmModal()" class="mt-6 w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xl shadow-md">
+        Aceptar
+      </button>
+    </div>
+  </div>
+
+  <!-- PANTALLA 3: MODO ADMINISTRADOR -->
+  <div id="screen-admin" class="hidden min-h-screen flex flex-col">
+    <header class="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-md">
+      <div class="flex items-center gap-3">
+        <div class="bg-blue-600 p-2 rounded-xl"><i data-lucide="shield-check" class="w-6 h-6"></i></div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight">Panel de Administrador</h1>
+          <p class="text-xs text-slate-400">Gestión de asistencia y horas post-7:00 PM</p>
+        </div>
+      </div>
+      <button onclick="goHome()" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm">
+        <i data-lucide="log-out" class="w-4 h-4"></i> Salir
+      </button>
+    </header>
+
+    <!-- Pestañas Admin -->
+    <div class="bg-white border-b border-slate-200 px-6">
+      <div class="max-w-6xl mx-auto flex gap-6 overflow-x-auto">
+        <button onclick="switchAdminTab('daily')" id="tab-btn-daily" class="py-4 border-b-2 border-blue-600 text-blue-600 font-bold text-sm whitespace-nowrap">Registro por Día</button>
+        <button onclick="switchAdminTab('monthly')" id="tab-btn-monthly" class="py-4 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-semibold text-sm whitespace-nowrap">Resumen Mensual (Horas 7 PM+)</button>
+        <button onclick="switchAdminTab('employees')" id="tab-btn-employees" class="py-4 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-semibold text-sm whitespace-nowrap">Agregar / Gestionar Personal</button>
+      </div>
+    </div>
+
+    <main class="max-w-6xl w-full mx-auto p-6 flex-1">
+      <!-- TAB 1: REGISTRO POR DÍA -->
+      <div id="admin-tab-daily" class="space-y-4">
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <label class="font-bold text-slate-700 text-sm">Seleccionar Fecha:</label>
+            <input type="date" id="admin-date-picker" onchange="loadDailyReport()" class="border border-slate-300 rounded-xl px-3 py-2 font-semibold text-slate-800" />
+          </div>
+          <button onclick="exportDailyCSV()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm flex items-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i> Descargar Excel (CSV)
+          </button>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500">
+                <th class="p-4">Empleado</th>
+                <th class="p-4">Entrada</th>
+                <th class="p-4">Salida Comer</th>
+                <th class="p-4">Entrada Comer</th>
+                <th class="p-4">Tarde Comida</th>
+                <th class="p-4">Salida Trabajo</th>
+                <th class="p-4">Horas (7 PM+)</th>
+                <th class="p-4 text-center">Día Libre</th>
+              </tr>
+            </thead>
+            <tbody id="daily-table-body" class="divide-y divide-slate-100 text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 2: RESUMEN MENSUAL -->
+      <div id="admin-tab-monthly" class="hidden space-y-4">
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <label class="font-bold text-slate-700 text-sm">Seleccionar Mes:</label>
+            <input type="month" id="admin-month-picker" onchange="loadMonthlyReport()" class="border border-slate-300 rounded-xl px-3 py-2 font-semibold text-slate-800" />
+          </div>
+          <button onclick="exportMonthlyCSV()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm flex items-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i> Descargar Mes (CSV)
+          </button>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500">
+                <th class="p-4">Empleado</th>
+                <th class="p-4">Días Trabajados</th>
+                <th class="p-4">Días Libres</th>
+                <th class="p-4">Minutos Tarde (Comida)</th>
+                <th class="p-4">Total Horas (7:00 PM en adelante)</th>
+              </tr>
+            </thead>
+            <tbody id="monthly-table-body" class="divide-y divide-slate-100 text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 3: GESTIONAR EMPLEADOS -->
+      <div id="admin-tab-employees" class="hidden max-w-xl space-y-4">
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+          <h3 class="font-bold text-lg text-slate-900 mb-3">Agregar Nuevo Empleado</h3>
+          <div class="flex gap-2">
+            <input type="text" id="new-emp-name" placeholder="Nombre completo del trabajador..." class="flex-1 border border-slate-300 rounded-xl px-4 py-2.5 outline-none focus:border-blue-600" />
+            <button onclick="addEmployee()" class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold">Agregar</button>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 divide-y divide-slate-100" id="admin-emp-list"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const ADMIN_PIN = "2111";
+    let employees = [];
+    let todayRecords = {};
+    let selectedEmpId = null;
+
+    function getTodayStr() {
+      const now = new Date();
+      return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+    }
+
+    function formatTime12(dateObj) {
+      return dateObj.toLocaleTimeString("es-SV", { hour: "2-digit", minute: "2-digit", hour12: true });
+    }
+
+    // Cálculo exacto: desde 7:00 PM (19:00) en bloques de 30 min = 0.50
+    function calcNightHours(exitDate) {
+      const h = exitDate.getHours();
+      const m = exitDate.getMinutes();
+      const totalMins = h * 60 + m;
+      const start7PM = 19 * 60; // 1140 mins
+      if (totalMins <= start7PM) return 0;
+      const diffMins = totalMins - start7PM;
+      const halfHourBlocks = Math.floor(diffMins / 30);
+      return halfHourBlocks * 0.5;
+    }
+
+    window.initApp = async function () {
+      lucide.createIcons();
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      document.getElementById("admin-date-picker").value = getTodayStr();
+      document.getElementById("admin-month-picker").value = getTodayStr().slice(0, 7);
+
+      // Escuchar empleados en tiempo real
+      window.fb.onSnapshot(window.fb.collection(window.db, "employees"), (snap) => {
+        employees = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+        renderWorkerList();
+        renderAdminEmployees();
+        if (!document.getElementById("screen-admin").classList.contains("hidden")) {
+          loadDailyReport();
+        }
+      });
+
+      // Escuchar registros de hoy en tiempo real
+      const qToday = window.fb.query(window.fb.collection(window.db, "records"), window.fb.where("date", "==", getTodayStr()));
+      window.fb.onSnapshot(qToday, (snap) => {
+        todayRecords = {};
+        snap.docs.forEach(d => {
+          todayRecords[d.data().empId] = { docId: d.id, ...d.data() };
+        });
+        renderWorkerList();
+        if (selectedEmpId) selectWorker(selectedEmpId);
+      });
+    };
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById("live-clock").textContent = now.toLocaleTimeString("es-SV", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+      document.getElementById("worker-date-label").textContent = now.toLocaleDateString("es-SV", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    }
+
+    // Navegación
+    window.goHome = () => {
+      document.getElementById("screen-home").classList.remove("hidden");
+      document.getElementById("screen-worker").classList.add("hidden");
+      document.getElementById("screen-admin").classList.add("hidden");
+      selectedEmpId = null;
+      document.getElementById("action-panel").classList.add("hidden");
+    };
+
+    window.enterWorkerMode = () => {
+      document.getElementById("screen-home").classList.add("hidden");
+      document.getElementById("screen-worker").classList.remove("hidden");
+      lucide.createIcons();
+    };
+
+    window.openAdminLogin = () => {
+      document.getElementById("admin-pin-input").value = "";
+      document.getElementById("pin-error").classList.add("hidden");
+      document.getElementById("modal-pin").classList.remove("hidden");
+      document.getElementById("modal-pin").classList.add("flex");
+      document.getElementById("admin-pin-input").focus();
+    };
+
+    window.closeAdminLogin = () => {
+      document.getElementById("modal-pin").classList.add("hidden");
+      document.getElementById("modal-pin").classList.remove("flex");
+    };
+
+    window.verifyAdminPin = () => {
+      const val = document.getElementById("admin-pin-input").value;
+      if (val === ADMIN_PIN) {
+        closeAdminLogin();
+        document.getElementById("screen-home").classList.add("hidden");
+        document.getElementById("screen-admin").classList.remove("hidden");
+        loadDailyReport();
+        lucide.createIcons();
+      } else {
+        document.getElementById("pin-error").classList.remove("hidden");
+      }
+    };
+
+    // Lógica Trabajador
+    function renderWorkerList() {
+      const container = document.getElementById("worker-list");
+      if (employees.length === 0) {
+        container.innerHTML = `<p class="text-slate-500 col-span-full bg-white p-4 rounded-xl">No hay empleados registrados aún. El administrador debe agregarlos primero.</p>`;
+        return;
+      }
+      container.innerHTML = employees.map(emp => {
+        const rec = todayRecords[emp.id] || {};
+        const isSelected = selectedEmpId === emp.id;
+        let badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">Sin ingreso</span>`;
+        if (rec.isDayOff && !rec.inTime) badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold">Día Libre</span>`;
+        else if (rec.outTime) badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">Jornada finalizada</span>`;
+        else if (rec.lunchInTime) badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">En turno (tarde)</span>`;
+        else if (rec.lunchOutTime) badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">En hora de comida</span>`;
+        else if (rec.inTime) badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">En turno</span>`;
+
+        return `
+          <button onclick="selectWorker('${emp.id}')" class="p-4 rounded-2xl border-2 text-left transition-all flex flex-col justify-between gap-2 ${isSelected ? 'bg-blue-50 border-blue-600 shadow-md' : 'bg-white border-slate-200 hover:border-blue-300'}">
+            <span class="font-bold text-lg text-slate-900">${emp.name}</span>
+            <div>${badge}</div>
+          </button>
+        `;
+      }).join("");
+    }
+
+    window.selectWorker = (empId) => {
+      selectedEmpId = empId;
+      renderWorkerList();
+      const emp = employees.find(e => e.id === empId);
+      const rec = todayRecords[empId] || {};
+      const panel = document.getElementById("action-panel");
+      const btn = document.getElementById("smart-action-btn");
+      const badges = document.getElementById("worker-status-badges");
+
+      panel.classList.remove("hidden");
+      document.getElementById("selected-worker-name").textContent = emp.name;
+
+      badges.innerHTML = `
+        ${rec.inTime ? `<span class="bg-slate-100 px-3 py-1 rounded-lg">Entrada: <b>${rec.inTime}</b></span>` : ""}
+        ${rec.lunchOutTime ? `<span class="bg-slate-100 px-3 py-1 rounded-lg">Salida Comer: <b>${rec.lunchOutTime}</b></span>` : ""}
+        ${rec.lunchInTime ? `<span class="bg-slate-100 px-3 py-1 rounded-lg">Entrada Comer: <b>${rec.lunchInTime}</b></span>` : ""}
+        ${rec.outTime ? `<span class="bg-slate-100 px-3 py-1 rounded-lg">Salida: <b>${rec.outTime}</b></span>` : ""}
+      `;
+
+      btn.disabled = false;
+      if (!rec.inTime) {
+        btn.className = "w-full py-6 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-2xl shadow-lg flex items-center justify-center gap-3";
+        btn.innerHTML = `<i data-lucide="log-in" class="w-8 h-8"></i> REGISTRAR ENTRADA`;
+      } else if (!rec.lunchOutTime) {
+        btn.className = "w-full py-6 px-6 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-2xl shadow-lg flex items-center justify-center gap-3";
+        btn.innerHTML = `<i data-lucide="utensils" class="w-8 h-8"></i> SALIDA A COMER`;
+      } else if (!rec.lunchInTime) {
+        btn.className = "w-full py-6 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-2xl shadow-lg flex items-center justify-center gap-3";
+        btn.innerHTML = `<i data-lucide="corner-down-left" class="w-8 h-8"></i> ENTRADA DE COMER`;
+      } else if (!rec.outTime) {
+        btn.className = "w-full py-6 px-6 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-2xl shadow-lg flex items-center justify-center gap-3";
+        btn.innerHTML = `<i data-lucide="log-out" class="w-8 h-8"></i> REGISTRAR SALIDA`;
+      } else {
+        btn.disabled = true;
+        btn.className = "w-full py-6 px-6 rounded-2xl bg-slate-300 text-slate-600 font-extrabold text-xl flex items-center justify-center gap-3 cursor-not-allowed";
+        btn.innerHTML = `<i data-lucide="check-circle" class="w-7 h-7"></i> JORNADA COMPLETADA HOY`;
+      }
+      lucide.createIcons();
+    };
+
+    window.executeSmartAction = async () => {
+      if (!selectedEmpId) return;
+      const now = new Date();
+      const timeStr = formatTime12(now);
+      const dateStr = getTodayStr();
+      const docId = `${dateStr}_${selectedEmpId}`;
+      const rec = todayRecords[selectedEmpId] || { date: dateStr, empId: selectedEmpId };
+
+      let message = "";
+      if (!rec.inTime) {
+        rec.inTime = timeStr;
+        rec.inTimestamp = now.getTime();
+        message = "Ha sido guardado con éxito su entrada.";
+      } else if (!rec.lunchOutTime) {
+        rec.lunchOutTime = timeStr;
+        rec.lunchOutTimestamp = now.getTime();
+        message = "Su salida de hora de comida ha sido registrada con éxito.";
+      } else if (!rec.lunchInTime) {
+        rec.lunchInTime = timeStr;
+        rec.lunchInTimestamp = now.getTime();
+        const diffMins = Math.floor((now.getTime() - rec.lunchOutTimestamp) / 60000);
+        rec.lunchLateMins = diffMins > 60 ? diffMins - 60 : 0;
+        message = "Su entrada de hora de comida ha sido registrada con éxito.";
+      } else if (!rec.outTime) {
+        rec.outTime = timeStr;
+        rec.outTimestamp = now.getTime();
+        rec.nightHours = calcNightHours(now);
+        message = "Su hora de salida ha sido registrada con éxito, feliz día.";
+      }
+
+      await window.fb.setDoc(window.fb.doc(window.db, "records", docId), rec);
+      document.getElementById("confirm-message").textContent = message;
+      document.getElementById("confirm-time").textContent = `Hora registrada: ${timeStr}`;
+      document.getElementById("modal-confirm").classList.remove("hidden");
+      document.getElementById("modal-confirm").classList.add("flex");
+    };
+
+    window.closeConfirmModal = () => {
+      document.getElementById("modal-confirm").classList.add("hidden");
+      document.getElementById("modal-confirm").classList.remove("flex");
+      selectedEmpId = null;
+      document.getElementById("action-panel").classList.add("hidden");
+      renderWorkerList();
+    };
+
+    // Lógica Administrador
+    window.switchAdminTab = (tab) => {
+      ["daily", "monthly", "employees"].forEach(t => {
+        document.getElementById(`admin-tab-${t}`).classList.toggle("hidden", t !== tab);
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (t === tab) {
+          btn.className = "py-4 border-b-2 border-blue-600 text-blue-600 font-bold text-sm whitespace-nowrap";
+        } else {
+          btn.className = "py-4 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-semibold text-sm whitespace-nowrap";
+        }
+      });
+      if (tab === "daily") loadDailyReport();
+      if (tab === "monthly") loadMonthlyReport();
+    };
+
+    window.addEmployee = async () => {
+      const input = document.getElementById("new-emp-name");
+      const name = input.value.trim();
+      if (!name) return;
+      await window.fb.addDoc(window.fb.collection(window.db, "employees"), { name });
+      input.value = "";
+    };
+
+    window.deleteEmployee = async (id) => {
+      if (!confirm("¿Eliminar a este trabajador de la lista?")) return;
+      await window.fb.deleteDoc(window.fb.doc(window.db, "employees", id));
+    };
+
+    function renderAdminEmployees() {
+      const list = document.getElementById("admin-emp-list");
+      list.innerHTML = employees.map(e => `
+        <div class="p-4 flex items-center justify-between">
+          <span class="font-bold text-slate-800">${e.name}</span>
+          <button onclick="deleteEmployee('${e.id}')" class="text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-lg text-sm font-semibold">Eliminar</button>
+        </div>
+      `).join("");
+    }
+
+    window.toggleDayOff = async (empId, currentState) => {
+      const dateStr = document.getElementById("admin-date-picker").value;
+      const docId = `${dateStr}_${empId}`;
+      const docRef = window.fb.doc(window.db, "records", docId);
+      const snap = await window.fb.getDoc(docRef);
+      const data = snap.exists() ? snap.data() : { date: dateStr, empId };
+      data.isDayOff = !currentState;
+      await window.fb.setDoc(docRef, data);
+      loadDailyReport();
+    };
+
+    let currentDailyRows = [];
+    window.loadDailyReport = async () => {
+      const dateStr = document.getElementById("admin-date-picker").value;
+      const q = window.fb.query(window.fb.collection(window.db, "records"), window.fb.where("date", "==", dateStr));
+      const snap = await window.fb.getDocs(q);
+      const map = {};
+      snap.docs.forEach(d => { map[d.data().empId] = d.data(); });
+
+      currentDailyRows = employees.map(emp => {
+        const r = map[emp.id] || {};
+        return {
+          name: emp.name,
+          inTime: r.inTime || "-",
+          lunchOutTime: r.lunchOutTime || "-",
+          lunchInTime: r.lunchInTime || "-",
+          lunchLateMins: r.lunchLateMins || 0,
+          outTime: r.outTime || "-",
+          nightHours: r.nightHours || 0,
+          isDayOff: !!r.isDayOff,
+          empId: emp.id
+        };
+      });
+
+      document.getElementById("daily-table-body").innerHTML = currentDailyRows.map(row => `
+        <tr class="${row.isDayOff ? 'bg-purple-50/60' : ''}">
+          <td class="p-4 font-bold text-slate-900">${row.name}</td>
+          <td class="p-4">${row.inTime}</td>
+          <td class="p-4">${row.lunchOutTime}</td>
+          <td class="p-4">${row.lunchInTime}</td>
+          <td class="p-4">${row.lunchLateMins > 0 ? `<span class="text-rose-600 font-bold">${row.lunchLateMins} min</span>` : '0 min'}</td>
+          <td class="p-4">${row.outTime}</td>
+          <td class="p-4 font-bold text-blue-700">${row.nightHours.toFixed(2)} hrs</td>
+          <td class="p-4 text-center">
+            <button onclick="toggleDayOff('${row.empId}', ${row.isDayOff})" class="px-3 py-1 rounded-full text-xs font-bold ${row.isDayOff ? 'bg-purple-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}">
+              ${row.isDayOff ? 'DÍA LIBRE' : 'Marcar Libre'}
+            </button>
+          </td>
+        </tr>
+      `).join("");
+    };
+
+    let currentMonthlyRows = [];
+    window.loadMonthlyReport = async () => {
+      const monthStr = document.getElementById("admin-month-picker").value;
+      const snap = await window.fb.getDocs(window.fb.collection(window.db, "records"));
+      const stats = {};
+      employees.forEach(e => { stats[e.id] = { name: e.name, days: 0, daysOff: 0, lateMins: 0, nightHours: 0 }; });
+
+      snap.docs.forEach(d => {
+        const r = d.data();
+        if (r.date && r.date.startsWith(monthStr) && stats[r.empId]) {
+          if (r.inTime) stats[r.empId].days += 1;
+          if (r.isDayOff) stats[r.empId].daysOff += 1;
+          stats[r.empId].lateMins += (r.lunchLateMins || 0);
+          stats[r.empId].nightHours += (r.nightHours || 0);
+        }
+      });
+
+      currentMonthlyRows = Object.values(stats);
+      document.getElementById("monthly-table-body").innerHTML = currentMonthlyRows.map(s => `
+        <tr>
+          <td class="p-4 font-bold text-slate-900">${s.name}</td>
+          <td class="p-4">${s.days}</td>
+          <td class="p-4">${s.daysOff}</td>
+          <td class="p-4">${s.lateMins} min</td>
+          <td class="p-4 font-extrabold text-blue-700 text-base">${s.nightHours.toFixed(2)} hrs</td>
+        </tr>
+      `).join("");
+    };
+
+    window.exportDailyCSV = () => {
+      const dateStr = document.getElementById("admin-date-picker").value;
+      let csv = "Empleado,Entrada,Salida Comer,Entrada Comer,Minutos Tarde,Salida Trabajo,Horas 7PM+,Dia Libre\n";
+      currentDailyRows.forEach(r => {
+        csv += `"${r.name}","${r.inTime}","${r.lunchOutTime}","${r.lunchInTime}",${r.lunchLateMins},"${r.outTime}",${r.nightHours},"${r.isDayOff ? 'SI' : 'NO'}"\n`;
+      });
+      downloadCSV(csv, `Asistencia_${dateStr}.csv`);
+    };
+
+    window.exportMonthlyCSV = () => {
+      const monthStr = document.getElementById("admin-month-picker").value;
+      let csv = "Empleado,Dias Trabajados,Dias Libres,Minutos Tarde Comida,Total Horas 7PM+\n";
+      currentMonthlyRows.forEach(s => {
+        csv += `"${s.name}",${s.days},${s.daysOff},${s.lateMins},${s.nightHours}\n`;
+      });
+      downloadCSV(csv, `Resumen_Mensual_${monthStr}.csv`);
+    };
+
+    function downloadCSV(content, filename) {
+      const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+    }
+  </script>
+</body>
+</html>
